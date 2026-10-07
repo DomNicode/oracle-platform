@@ -1,0 +1,2 @@
+tenancy_ocid = "ocid1.tenancy.oc1..<deine-tenancy-ocid>"
+ssh_public_key = "ssh-ed25519 <key> <user@host> "
