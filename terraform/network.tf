@@ -46,12 +46,34 @@ resource "oci_core_security_list" "sayit" {
     protocol    = "all"
   }
 
+  #SSH
   ingress_security_rules {
     protocol = "6" 
     source   = "0.0.0.0/0"
     tcp_options {
       min = 22
       max = 22
+    }
+  }
+  # HTTP: Let's-Encrypt-Validierung und Weiterleitung auf HTTPS
+  ingress_security_rules {
+    protocol = "6" #tcp 
+    source   = "0.0.0.0/0"
+    description = "HTTP"
+    tcp_options {
+      min = 80
+      max = 80
+    }
+  }
+
+  #HTTPS
+  ingress_security_rules {
+    protocol = "6"
+    source   = "0.0.0.0/0"
+    description = "HTTPS"
+    tcp_options {
+      min = 443
+      max = 443
     }
   }
 

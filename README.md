@@ -17,20 +17,31 @@ flowchart TB
         subgraph VCN["VCN sayit-vcn · 10.0.0.0/16"]
             IGW[Internet Gateway]
             RT[Route Table<br/>0.0.0.0/0 → IGW]
-            SL[Security List<br/>SSH 22, ICMP]
+            SL[Security List<br/>SSH 22, HTTP 80, HTTPS 443, ICMP]
 
             subgraph Subnet["Public Subnet sayit-net · 10.0.0.0/24"]
-                VM["VM sayit-agent<br/>Ampere A1 · 2 OCPU · 12 GB<br/>Ubuntu 24.04 (ARM64)"]
+                subgraph VM["VM sayit-agent · Ampere A1 · 2 OCPU · 12 GB · Ubuntu 24.04 ARM64"]
+                    subgraph K3S["k3s"]
+                        TR[Traefik<br/>Ingress]
+                        CM[cert-manager<br/>Let's Encrypt]
+                        APPS[Anwendungen]
+                    end
+                end
             end
         end
         IP[Reservierte öffentliche IP]
     end
 
+    DNS["Cloudflare DNS<br/>*.dompah.de → reservierte IP"]
+
     Internet <--> IGW
+    DNS -.-> IP
     IGW --- RT
     RT --- Subnet
     SL --- Subnet
-    IP --- VM
+    IP --- TR
+    TR --> APPS
+    CM -. TLS-Zertifikate .-> TR
 ```
 
 ### Verwaltete Ressourcen
@@ -40,7 +51,7 @@ flowchart TB
 | Virtual Cloud Network | `oci_core_vcn.sayit` | Privates Netzwerk, `10.0.0.0/16` |
 | Internet Gateway | `oci_core_internet_gateway.sayit` | Verbindung des VCN zum Internet |
 | Route Table | `oci_core_route_table.sayit` | Leitet ausgehenden Verkehr über das Internet Gateway |
-| Security List | `oci_core_security_list.sayit` | Firewall auf Netzwerkebene (eingehend: SSH, ICMP) |
+| Security List | `oci_core_security_list.sayit` | Firewall auf Netzwerkebene (eingehend: SSH, HTTP, HTTPS, ICMP) |
 | Subnet | `oci_core_subnet.sayit` | Öffentliches Subnet, `10.0.0.0/24` |
 | Compute Instance | `oci_core_instance.sayit_agent` | ARM-VM im Always-Free-Kontingent |
 | Reserved Public IP | `oci_core_public_ip.sayit` | Feste öffentliche IP für DNS-Einträge |
@@ -62,6 +73,13 @@ oracle-platform/
 │   ├── outputs.tf                  # Ausgaben (z. B. öffentliche IP)
 │   ├── terraform.tfvars.example    # Vorlage für eigene Werte
 │   └── .terraform.lock.hcl         # Fixierte Provider-Version
+├── k3s/
+│   ├── config.yaml                 # k3s-Konfiguration (/etc/rancher/k3s/config.yaml)
+│   └── README.md                   # Installation inkl. Firewall-Anpassung
+├── cluster/
+│   └── cert-manager/
+│       ├── cluster-issuers.yaml    # Let's Encrypt (Staging + Prod)
+│       └── README.md               # Installation und Nutzung von cert-manager
 └── README.md
 ```
 
@@ -158,8 +176,8 @@ Ampere-A1-Kapazität ist bei OCI knapp. Eine versehentliche Neuerstellung der VM
 
 - [x] VM im Always-Free-Kontingent, Grundabsicherung, reservierte IP
 - [x] Infrastruktur als Code mit Terraform (Import der bestehenden Ressourcen)
-- [ ] Kubernetes mit **k3s**
-- [ ] Ingress und automatische TLS-Zertifikate (**Traefik**, **cert-manager**)
+- [x] Kubernetes mit **k3s**
+- [x] Ingress und automatische TLS-Zertifikate (**Traefik**, **cert-manager**, Let's Encrypt)
 - [ ] CI/CD mit **GitHub Actions** (ARM64-Images, Deployment auf die VM)
 - [ ] GitOps mit **Argo CD**
 - [ ] Monitoring mit **Prometheus** und **Grafana**, erste SLOs
