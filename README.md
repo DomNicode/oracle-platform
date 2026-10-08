@@ -24,7 +24,8 @@ flowchart TB
                     subgraph K3S["k3s"]
                         TR[Traefik<br/>Ingress]
                         CM[cert-manager<br/>Let's Encrypt]
-                        APPS[Anwendungen]
+                        ARGO[Argo CD<br/>GitOps]
+                        APPS[Anwendungen<br/>z. B. sayit-agent]
                     end
                 end
             end
@@ -33,6 +34,8 @@ flowchart TB
     end
 
     DNS["Cloudflare DNS<br/>*.dompah.de → reservierte IP"]
+    GH["GitHub<br/>Repos + Actions"]
+    GHCR[("GHCR<br/>Container-Images")]
 
     Internet <--> IGW
     DNS -.-> IP
@@ -42,6 +45,10 @@ flowchart TB
     IP --- TR
     TR --> APPS
     CM -. TLS-Zertifikate .-> TR
+    GH -- "baut Images" --> GHCR
+    ARGO -- "liest Git (Pull)" --> GH
+    ARGO -- "synchronisiert" --> APPS
+    APPS -. "zieht Images" .-> GHCR
 ```
 
 ### Verwaltete Ressourcen
@@ -75,11 +82,19 @@ oracle-platform/
 │   └── .terraform.lock.hcl         # Fixierte Provider-Version
 ├── k3s/
 │   ├── config.yaml                 # k3s-Konfiguration (/etc/rancher/k3s/config.yaml)
+│   ├── traefik-config.yaml         # Traefik: HTTP → HTTPS
 │   └── README.md                   # Installation inkl. Firewall-Anpassung
 ├── cluster/
-│   └── cert-manager/
-│       ├── cluster-issuers.yaml    # Let's Encrypt (Staging + Prod)
-│       └── README.md               # Installation und Nutzung von cert-manager
+│   ├── cert-manager/
+│   │   ├── cluster-issuers.yaml    # Let's Encrypt (Staging + Prod)
+│   │   └── README.md
+│   ├── argocd/
+│   │   ├── values.yaml             # Helm-Values für Argo CD
+│   │   └── README.md               # Installation, Repo-Zugriff, Secrets
+│   ├── bootstrap/
+│   │   └── root-app.yaml           # Root-Application ("App of Apps") – einmalig angewendet
+│   └── apps/
+│       └── sayit-agent.yaml        # Eine Datei pro Anwendung – von Argo CD automatisch erkannt
 └── README.md
 ```
 
@@ -146,6 +161,51 @@ Der abschließende `terraform plan` meldet *„No changes“* – Code und reale
 
 ---
 
+## Deployment: CI/CD und GitOps
+
+Anwendungen werden nicht von Hand installiert. Git ist die einzige Wahrheit – Argo CD hält den Cluster dauerhaft auf dem Stand des Repositorys.
+
+```mermaid
+sequenceDiagram
+    participant Dev as Entwickler
+    participant GH as GitHub Actions
+    participant GHCR as GHCR
+    participant Repo as Projekt-Repo
+    participant Argo as Argo CD
+    participant K8s as k3s
+
+    Dev->>Repo: git push
+    Repo->>GH: Workflow startet
+    GH->>GHCR: ARM64-Image bauen und pushen (Tag = Commit-SHA)
+    GH->>Repo: Bot-Commit: image.tag in values.yaml
+    Argo->>Repo: erkennt Änderung (Polling)
+    Argo->>K8s: Helm-Chart rendern und anwenden
+    K8s->>GHCR: neues Image ziehen
+    K8s->>K8s: Rolling Update (Readiness-Probe)
+```
+
+**Aufteilung der Verantwortung:**
+
+| Repo | Inhalt |
+|---|---|
+| `oracle-platform` | Infrastruktur, Cluster-Komponenten und die Liste der Anwendungen (`cluster/apps/`) |
+| Projekt-Repo (z. B. `sayit`) | Code, Dockerfile, Helm-Chart und CI-Workflow der Anwendung |
+
+**App of Apps:** Die Root-Application [`cluster/bootstrap/root-app.yaml`](cluster/bootstrap/root-app.yaml) beobachtet den Ordner `cluster/apps/`. Eine neue Anwendung kommt auf den Cluster, indem dort eine Application-Datei hinzugefügt wird – ohne `kubectl` oder `helm` von Hand.
+
+**Automatische Selbstheilung:** `selfHeal` setzt manuelle Änderungen im Cluster auf den Git-Stand zurück, `prune` entfernt Ressourcen, die aus Git gelöscht wurden.
+
+Details: [`cluster/argocd/README.md`](cluster/argocd/README.md)
+
+### Laufende Anwendungen
+
+| Anwendung | URL | Quelle |
+|---|---|---|
+| Argo CD | `https://argocd.dompah.de` | [`cluster/argocd`](cluster/argocd) |
+| SayIt Agent | `https://agent.dompah.de/health` | Repo `sayit`, Ordner `agent/chart` |
+
+---
+
 ## Schutzmechanismen
 
 Ampere-A1-Kapazität ist bei OCI knapp. Eine versehentliche Neuerstellung der VM könnte daran scheitern. Deshalb:
@@ -164,6 +224,18 @@ Ampere-A1-Kapazität ist bei OCI knapp. Eine versehentliche Neuerstellung der VM
 - `terraform.tfvars` – persönliche Werte wie die Tenancy-OCID
 - `~/.oci/` – API-Key und Konfiguration liegen ausschließlich lokal
 
+**Nur im Cluster (Kubernetes Secrets), bewusst nicht in Git:**
+
+- `ghcr-pull` – Lesezugriff auf private Images in GHCR (`read:packages`)
+- Argo-CD-Repository-Zugang – read-only Deploy Key für private Projekt-Repos
+
+Wie sie angelegt werden, steht in [`cluster/argocd/README.md`](cluster/argocd/README.md).
+
+**In der Pipeline:**
+
+- Jeder Job erhält nur die Rechte, die er braucht (`packages: write` für den Build, `contents: write` nur für das Tag-Update)
+- Der Cluster wird nie von außen angesprochen – Argo CD holt sich Änderungen selbst (Pull statt Push)
+
 **Auf der VM:**
 
 - Login nur per SSH-Key, Passwort-Login deaktiviert
@@ -178,11 +250,12 @@ Ampere-A1-Kapazität ist bei OCI knapp. Eine versehentliche Neuerstellung der VM
 - [x] Infrastruktur als Code mit Terraform (Import der bestehenden Ressourcen)
 - [x] Kubernetes mit **k3s**
 - [x] Ingress und automatische TLS-Zertifikate (**Traefik**, **cert-manager**, Let's Encrypt)
-- [ ] CI/CD mit **GitHub Actions** (ARM64-Images, Deployment auf die VM)
-- [ ] GitOps mit **Argo CD**
+- [x] CI mit **GitHub Actions** (native ARM64-Builds, private Images in GHCR)
+- [x] GitOps mit **Argo CD** (App of Apps, automatisches Tag-Update aus der Pipeline)
 - [ ] Monitoring mit **Prometheus** und **Grafana**, erste SLOs
 - [ ] Terraform-State in OCI Object Storage
-- [ ] Erstes Projekt auf der Plattform: **SayIt** (LiveKit-Server und KI-Agent)
+- [ ] Secrets per **Sealed Secrets** oder **External Secrets** ebenfalls in Git
+- [ ] Erstes Projekt auf der Plattform: **SayIt** (Grundgerüst des Agents läuft – als Nächstes LiveKit-Server und KI-Logik)
 
 ---
 
