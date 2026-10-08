@@ -117,8 +117,35 @@ Der Test bestätigt den kompletten Weg: Port 80 → ServiceLB → Traefik → Se
 
 ---
 
+## Traefik: HTTP → HTTPS
+
+k3s installiert Traefik über ein Helm-Chart. Dessen Werte werden über eine `HelmChartConfig` angepasst: [`traefik-config.yaml`](traefik-config.yaml).
+
+```bash
+sudo cp traefik-config.yaml /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+```
+
+Alles in `/var/lib/rancher/k3s/server/manifests/` spielt k3s automatisch ein – auch nach einem Neustart. Traefik wird danach mit den neuen Werten neu ausgerollt (`helm list -n kube-system` zeigt eine höhere Revision).
+
+Die Konfiguration leitet alle Anfragen auf Port 80 dauerhaft auf HTTPS um (Statuscode **308**, die HTTP-Methode bleibt erhalten):
+
+```bash
+curl -I http://test.dompah.de
+# HTTP/1.1 308 Permanent Redirect
+# Location: https://test.dompah.de/
+```
+
+> **Hinweis:** Ab Traefik-Chart **v40** liegt die Einstellung unter `ports.web.http.redirections`. Ältere Chart-Versionen nutzen `ports.web.redirections` – falsche Schlüssel werden von Helm ohne Fehlermeldung ignoriert. Tatsächlich übergebene Werte prüfen mit:
+>
+> ```bash
+> helm get values traefik -n kube-system
+> ```
+
+Die HTTP-01-Validierung von cert-manager funktioniert trotz Umleitung: Let's Encrypt folgt der Umleitung auf HTTPS und prüft dabei das Zertifikat nicht.
+
+---
+
 ## Nächste Schritte
 
-- Ports 80/443 in der OCI Security List öffnen (Terraform)
-- cert-manager für automatische TLS-Zertifikate (Let's Encrypt)
 - Zugriff per `kubectl` vom lokalen Rechner über einen SSH-Tunnel
+- CI/CD mit GitHub Actions

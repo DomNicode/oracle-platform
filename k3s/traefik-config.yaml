@@ -1,0 +1,21 @@
+# Traefik-Konfiguration für k3s
+# Liegt auf der VM unter /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+# und wird von k3s automatisch eingespielt.
+#
+# Leitet alle HTTP-Anfragen (Port 80) dauerhaft auf HTTPS (Port 443) um.
+# Hinweis: ab Traefik-Chart v40 liegt die Einstellung unter ports.web.http.redirections
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
