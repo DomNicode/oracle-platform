@@ -1,0 +1,31 @@
+# Root-Application ("App of Apps")
+#
+# Beobachtet den Ordner cluster/apps/ in diesem Repo. Jede Application-Datei,
+# die dort liegt, wird von Argo CD automatisch angelegt – jede gelöschte entfernt.
+#
+# Einmalig anwenden (das einzige kubectl apply von Hand):
+#   kubectl apply -f root-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-apps
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    # Öffentliches Repo: HTTPS ohne Zugangsdaten.
+    # Bei privatem Repo: git@github.com:DomNicode/oracle-platform.git + Deploy Key in Argo CD
+    repoURL: https://github.com/DomNicode/oracle-platform.git
+    targetRevision: main
+    path: cluster/apps
+
+  # Die Application-Objekte selbst leben im Namespace argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

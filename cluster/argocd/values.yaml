@@ -1,0 +1,33 @@
+# Argo CD – Helm-Values (Chart argo/argo-cd, geprüft gegen Chart 10.x / Argo CD v3.5)
+#
+# Installation:
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace -f values.yaml
+
+global:
+  # Wird für Ingress, Zertifikat und Links in der UI verwendet
+  domain: argocd.dompah.de
+
+configs:
+  params:
+    # TLS endet bereits bei Traefik (Zertifikat von cert-manager).
+    # Argo CD selbst spricht intern unverschlüsseltes HTTP – sonst
+    # entstehen Umleitungsschleifen zwischen Traefik und Argo CD.
+    server.insecure: true
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    # TLS-Block mit Secret "argocd-server-tls" – wird von cert-manager befüllt
+    tls: true
+
+# Kein SSO (Login per Admin-Passwort) – spart RAM
+dex:
+  enabled: false
+
+# Keine Benachrichtigungen (Slack/Mail) – vorerst nicht benötigt
+notifications:
+  enabled: false

@@ -1,0 +1,34 @@
+# Argo CD Application: SayIt Agent
+#
+# Argo CD liest das Helm-Chart aus dem Repo "sayit" (Ordner agent/chart)
+# und hält den Namespace "sayit" dauerhaft synchron mit dem Stand auf main.
+#
+# Einmalig anwenden:
+#   kubectl apply -f sayit-agent.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sayit-agent
+  namespace: argocd
+spec:
+  project: default
+
+  # WOHER: Chart aus dem privaten Repo (Zugriff per Deploy Key, siehe Argo CD → Repositories)
+  source:
+    repoURL: git@github.com:DomNicode/sayit.git
+    targetRevision: main
+    path: agent/chart
+    helm:
+      releaseName: sayit-agent
+
+  # WOHIN: in diesen Cluster, Namespace "sayit"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sayit
+
+  syncPolicy:
+    automated:
+      # Ressourcen, die aus Git entfernt werden, auch im Cluster löschen
+      prune: true
+      # Manuelle Änderungen im Cluster automatisch auf den Git-Stand zurücksetzen
+      selfHeal: true
