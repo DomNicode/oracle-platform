@@ -1,7 +1,9 @@
 # Argo CD Application: Monitoring (Prometheus, Grafana, Alertmanager)
 #
-# Chart: kube-prometheus-stack direkt aus dem Helm-Repository der
-# Prometheus-Community – kein eigenes Chart nötig, nur Values.
+# Zwei Quellen:
+#   1. kube-prometheus-stack direkt aus dem Helm-Repository der Prometheus-Community
+#   2. eigene Zusatzdateien aus diesem Repo (cluster/monitoring/),
+#      z. B. das verschlüsselte Grafana-Admin-Passwort
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -10,82 +12,88 @@ metadata:
 spec:
   project: default
 
-  source:
-    repoURL: https://prometheus-community.github.io/helm-charts
-    chart: kube-prometheus-stack
-    targetRevision: 92.2.0   # feste Version – Updates bewusst per Commit
-    helm:
-      releaseName: monitoring
-      valuesObject:
-        # --- k3s-Besonderheit -------------------------------------------
-        # Controller-Manager, Scheduler, Proxy und etcd laufen bei k3s
-        # gemeinsam in einem Prozess und sind nicht einzeln abfragbar.
-        # Ohne diese Zeilen meldet Prometheus sie dauerhaft als "down".
-        kubeControllerManager:
-          enabled: false
-        kubeScheduler:
-          enabled: false
-        kubeProxy:
-          enabled: false
-        kubeEtcd:
-          enabled: false
+  sources:
+    # --- Quelle 1: das offizielle Chart ---------------------------------
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 92.2.0   # feste Version – Updates bewusst per Commit
+      helm:
+        releaseName: monitoring
+        valuesObject:
+          # k3s-Besonderheit: Controller-Manager, Scheduler, Proxy und etcd
+          # laufen gemeinsam in einem Prozess und sind nicht einzeln abfragbar.
+          # Ohne diese Zeilen meldet Prometheus sie dauerhaft als "down".
+          kubeControllerManager:
+            enabled: false
+          kubeScheduler:
+            enabled: false
+          kubeProxy:
+            enabled: false
+          kubeEtcd:
+            enabled: false
 
-        # --- Prometheus -------------------------------------------------
-        prometheus:
-          prometheusSpec:
-            retention: 7d
-            retentionSize: 8GB
-            # ServiceMonitors/PodMonitors aus ALLEN Namespaces einsammeln,
-            # nicht nur die dieses Charts (wichtig für eigene Apps)
-            serviceMonitorSelectorNilUsesHelmValues: false
-            podMonitorSelectorNilUsesHelmValues: false
-            ruleSelectorNilUsesHelmValues: false
+          prometheus:
+            prometheusSpec:
+              retention: 7d
+              retentionSize: 8GB
+              # ServiceMonitors/PodMonitors/Regeln aus ALLEN Namespaces einsammeln
+              serviceMonitorSelectorNilUsesHelmValues: false
+              podMonitorSelectorNilUsesHelmValues: false
+              ruleSelectorNilUsesHelmValues: false
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 400Mi
+                limits:
+                  memory: 1Gi
+              # Daten auf der Festplatte statt im Pod – überleben Neustarts
+              storageSpec:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: local-path
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 10Gi
+
+          alertmanager:
+            alertmanagerSpec:
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+
+          grafana:
+            defaultDashboardsTimezone: browser
+            # Admin-Zugang aus eigenem Secret (SealedSecret in cluster/monitoring/)
+            admin:
+              existingSecret: grafana-admin
+              userKey: admin-user
+              passwordKey: admin-password
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              annotations:
+                cert-manager.io/cluster-issuer: letsencrypt-prod
+              hosts:
+                - grafana.dompah.de
+              tls:
+                - secretName: grafana-tls
+                  hosts:
+                    - grafana.dompah.de
             resources:
               requests:
-                cpu: 100m
-                memory: 400Mi
-              limits:
-                memory: 1Gi
-            # Daten auf der Festplatte statt im Pod – überleben Neustarts
-            storageSpec:
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: local-path
-                  accessModes: ["ReadWriteOnce"]
-                  resources:
-                    requests:
-                      storage: 10Gi
-
-        # --- Alertmanager -----------------------------------------------
-        alertmanager:
-          alertmanagerSpec:
-            resources:
-              requests:
-                cpu: 10m
-                memory: 32Mi
-              limits:
+                cpu: 50m
                 memory: 128Mi
+              limits:
+                memory: 384Mi
 
-        # --- Grafana ----------------------------------------------------
-        grafana:
-          defaultDashboardsTimezone: browser
-          ingress:
-            enabled: true
-            ingressClassName: traefik
-            annotations:
-              cert-manager.io/cluster-issuer: letsencrypt-prod
-            hosts:
-              - grafana.dompah.de
-            tls:
-              - secretName: grafana-tls
-                hosts:
-                  - grafana.dompah.de
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              memory: 384Mi
+    # --- Quelle 2: eigene Dateien aus oracle-platform -------------------
+    - repoURL: https://github.com/DomNicode/oracle-platform.git
+      targetRevision: main
+      path: cluster/monitoring
 
   destination:
     server: https://kubernetes.default.svc
