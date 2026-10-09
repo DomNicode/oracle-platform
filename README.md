@@ -25,6 +25,8 @@ flowchart TB
                         TR[Traefik<br/>Ingress]
                         CM[cert-manager<br/>Let's Encrypt]
                         ARGO[Argo CD<br/>GitOps]
+                        SS[Sealed Secrets]
+                        MON[Prometheus + Grafana<br/>Monitoring]
                         APPS[Anwendungen<br/>z. B. sayit-agent]
                     end
                 end
@@ -49,6 +51,8 @@ flowchart TB
     ARGO -- "liest Git (Pull)" --> GH
     ARGO -- "synchronisiert" --> APPS
     APPS -. "zieht Images" .-> GHCR
+    MON -. "Metriken" .-> APPS
+    SS -. "entschlüsselt Secrets" .-> APPS
 ```
 
 ### Verwaltete Ressourcen
@@ -93,8 +97,15 @@ oracle-platform/
 │   │   └── README.md               # Installation, Repo-Zugriff, Secrets
 │   ├── bootstrap/
 │   │   └── root-app.yaml           # Root-Application ("App of Apps") – einmalig angewendet
-│   └── apps/
-│       └── sayit-agent.yaml        # Eine Datei pro Anwendung – von Argo CD automatisch erkannt
+│   ├── apps/                       # Eine Datei pro Anwendung – von Argo CD automatisch erkannt
+│   │   ├── sealed-secrets.yaml
+│   │   ├── monitoring.yaml
+│   │   └── sayit-agent.yaml
+│   ├── sealed-secrets/
+│   │   └── README.md               # Secrets verschlüsseln, Schlüssel sichern
+│   └── monitoring/
+│       ├── grafana-admin.yaml      # Grafana-Admin-Passwort (SealedSecret)
+│       └── README.md               # Prometheus, Grafana, eigene Apps überwachen
 └── README.md
 ```
 
@@ -202,6 +213,8 @@ Details: [`cluster/argocd/README.md`](cluster/argocd/README.md)
 | Anwendung | URL | Quelle |
 |---|---|---|
 | Argo CD | `https://argocd.dompah.de` | [`cluster/argocd`](cluster/argocd) |
+| Grafana | `https://grafana.dompah.de` | [`cluster/monitoring`](cluster/monitoring) |
+| Sealed Secrets | – (Controller) | [`cluster/sealed-secrets`](cluster/sealed-secrets) |
 | SayIt Agent | `https://agent.dompah.de/health` | Repo `sayit`, Ordner `agent/chart` |
 
 ---
@@ -224,7 +237,12 @@ Ampere-A1-Kapazität ist bei OCI knapp. Eine versehentliche Neuerstellung der VM
 - `terraform.tfvars` – persönliche Werte wie die Tenancy-OCID
 - `~/.oci/` – API-Key und Konfiguration liegen ausschließlich lokal
 
-**Nur im Cluster (Kubernetes Secrets), bewusst nicht in Git:**
+**Secrets in Git – verschlüsselt mit Sealed Secrets:**
+
+- `grafana-admin` – Admin-Zugang für Grafana
+- Nur der Controller im Cluster kann sie entschlüsseln; der private Schlüssel ist außerhalb von Git gesichert. Details: [`cluster/sealed-secrets/README.md`](cluster/sealed-secrets/README.md)
+
+**Noch nur im Cluster (Umstellung auf Sealed Secrets geplant):**
 
 - `ghcr-pull` – Lesezugriff auf private Images in GHCR (`read:packages`)
 - Argo-CD-Repository-Zugang – read-only Deploy Key für private Projekt-Repos
@@ -252,9 +270,12 @@ Wie sie angelegt werden, steht in [`cluster/argocd/README.md`](cluster/argocd/RE
 - [x] Ingress und automatische TLS-Zertifikate (**Traefik**, **cert-manager**, Let's Encrypt)
 - [x] CI mit **GitHub Actions** (native ARM64-Builds, private Images in GHCR)
 - [x] GitOps mit **Argo CD** (App of Apps, automatisches Tag-Update aus der Pipeline)
-- [ ] Monitoring mit **Prometheus** und **Grafana**, erste SLOs
+- [x] Monitoring mit **Prometheus**, **Grafana** und **Alertmanager** (über Argo CD, persistenter Speicher)
+- [x] Secrets verschlüsselt in Git mit **Sealed Secrets**
+- [ ] Eigene Metriken der Anwendungen (`/metrics`, ServiceMonitor) und erstes SLO-Dashboard
+- [ ] `ghcr-pull` und App-Secrets auf Sealed Secrets umstellen
+- [ ] Build-Cache in GitHub Actions, ConfigMap im App-Chart
 - [ ] Terraform-State in OCI Object Storage
-- [ ] Secrets per **Sealed Secrets** oder **External Secrets** ebenfalls in Git
 - [ ] Erstes Projekt auf der Plattform: **SayIt** (Grundgerüst des Agents läuft – als Nächstes LiveKit-Server und KI-Logik)
 
 ---
