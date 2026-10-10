@@ -3,7 +3,7 @@
 Infrastructure as Code für meine persönliche DevOps-Plattform auf **Oracle Cloud Infrastructure (OCI)**.
 Die Plattform dient als gemeinsame Grundlage für meine Portfolio-Projekte – angefangen mit **SayIt**, einem Sprach-zu-Sprach-KI-Agenten.
 
-Ziel des Projekts ist es, den kompletten Weg von der Infrastruktur bis zur laufenden Anwendung selbst aufzubauen und zu verstehen: Infrastruktur als Code, Container-Orchestrierung, automatisierte Deployments und Monitoring.
+Ziel des Projekts ist es, den kompletten Weg von der Infrastruktur bis zur laufenden Anwendung selbst aufzubauen und zu verstehen: Infrastruktur als Code, Container-Orchestrierung, automatisierte Deployments und Observability (Metriken und Logs).
 
 ---
 
@@ -27,6 +27,7 @@ flowchart TB
                         ARGO[Argo CD<br/>GitOps]
                         SS[Sealed Secrets]
                         MON[Prometheus + Grafana<br/>Monitoring]
+                        LOG[Loki + Alloy<br/>Logging]
                         APPS[Anwendungen<br/>z. B. sayit-agent]
                     end
                 end
@@ -52,6 +53,7 @@ flowchart TB
     ARGO -- "synchronisiert" --> APPS
     APPS -. "zieht Images" .-> GHCR
     MON -. "Metriken" .-> APPS
+    LOG -. "Logs" .-> APPS
     SS -. "entschlüsselt Secrets" .-> APPS
 ```
 
@@ -100,12 +102,18 @@ oracle-platform/
 │   ├── apps/                       # Eine Datei pro Anwendung – von Argo CD automatisch erkannt
 │   │   ├── sealed-secrets.yaml
 │   │   ├── monitoring.yaml
+│   │   ├── loki.yaml
+│   │   ├── alloy.yaml
 │   │   └── sayit-agent.yaml
 │   ├── sealed-secrets/
 │   │   └── README.md               # Secrets verschlüsseln, Schlüssel sichern
-│   └── monitoring/
-│       ├── grafana-admin.yaml      # Grafana-Admin-Passwort (SealedSecret)
-│       └── README.md               # Prometheus, Grafana, eigene Apps überwachen
+│   ├── monitoring/
+│   │   ├── grafana-admin.yaml      # Grafana-Admin-Passwort (SealedSecret)
+│   │   └── README.md               # Prometheus, Grafana, eigene Apps überwachen
+│   └── logging/
+│       ├── loki-values.yaml        # Helm-Values für Loki
+│       ├── alloy-values.yaml       # Helm-Values und Pipeline für Alloy
+│       └── README.md               # Loki, Alloy, LogQL-Abfragen
 └── README.md
 ```
 
@@ -214,6 +222,7 @@ Details: [`cluster/argocd/README.md`](cluster/argocd/README.md)
 |---|---|---|
 | Argo CD | `https://argocd.dompah.de` | [`cluster/argocd`](cluster/argocd) |
 | Grafana | `https://grafana.dompah.de` | [`cluster/monitoring`](cluster/monitoring) |
+| Loki + Alloy | – (Abfrage über Grafana) | [`cluster/logging`](cluster/logging) |
 | Sealed Secrets | – (Controller) | [`cluster/sealed-secrets`](cluster/sealed-secrets) |
 | SayIt Agent | `https://agent.dompah.de/health` | Repo `sayit`, Ordner `agent/chart` |
 
@@ -240,14 +249,12 @@ Ampere-A1-Kapazität ist bei OCI knapp. Eine versehentliche Neuerstellung der VM
 **Secrets in Git – verschlüsselt mit Sealed Secrets:**
 
 - `grafana-admin` – Admin-Zugang für Grafana
+- `ghcr-pull` – Lesezugriff auf private Images in GHCR (`read:packages`), liegt im jeweiligen Projekt-Repo
 - Nur der Controller im Cluster kann sie entschlüsseln; der private Schlüssel ist außerhalb von Git gesichert. Details: [`cluster/sealed-secrets/README.md`](cluster/sealed-secrets/README.md)
 
-**Noch nur im Cluster (Umstellung auf Sealed Secrets geplant):**
+**Bewusst nur im Cluster:**
 
-- `ghcr-pull` – Lesezugriff auf private Images in GHCR (`read:packages`)
-- Argo-CD-Repository-Zugang – read-only Deploy Key für private Projekt-Repos
-
-Wie sie angelegt werden, steht in [`cluster/argocd/README.md`](cluster/argocd/README.md).
+- Argo-CD-Repository-Zugang – read-only Deploy Key für private Projekt-Repos (Anlage siehe [`cluster/argocd/README.md`](cluster/argocd/README.md))
 
 **In der Pipeline:**
 
@@ -271,11 +278,16 @@ Wie sie angelegt werden, steht in [`cluster/argocd/README.md`](cluster/argocd/RE
 - [x] CI mit **GitHub Actions** (native ARM64-Builds, private Images in GHCR)
 - [x] GitOps mit **Argo CD** (App of Apps, automatisches Tag-Update aus der Pipeline)
 - [x] Monitoring mit **Prometheus**, **Grafana** und **Alertmanager** (über Argo CD, persistenter Speicher)
-- [x] Secrets verschlüsselt in Git mit **Sealed Secrets**
+- [x] Secrets verschlüsselt in Git mit **Sealed Secrets** (`grafana-admin`, `ghcr-pull`)
+- [x] Zentrale Logs mit **Loki** und **Grafana Alloy** (7 Tage, Abfrage in Grafana)
+- [ ] CI-Qualität: Branch Protection, PR-Checks (ruff, pytest, gitleaks, Semgrep, Trivy)
+- [ ] Template-Repo mit Reusable Workflows für alle Projekte
+- [ ] Alertmanager-Receiver (Mail/Discord)
 - [ ] Eigene Metriken der Anwendungen (`/metrics`, ServiceMonitor) und erstes SLO-Dashboard
-- [ ] `ghcr-pull` und App-Secrets auf Sealed Secrets umstellen
+- [ ] App-Secrets (z. B. API-Keys des Agents) als Sealed Secrets
 - [ ] Build-Cache in GitHub Actions, ConfigMap im App-Chart
 - [ ] Terraform-State in OCI Object Storage
+- [ ] Erweiterung: **Jenkins** im Cluster (Helm, Agent-Pods pro Build) als Vergleich zu GitHub Actions
 - [ ] Erstes Projekt auf der Plattform: **SayIt** (Grundgerüst des Agents läuft – als Nächstes LiveKit-Server und KI-Logik)
 
 ---
