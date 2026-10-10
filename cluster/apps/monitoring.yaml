@@ -72,6 +72,11 @@ spec:
               existingSecret: grafana-admin
               userKey: admin-user
               passwordKey: admin-password
+            additionalDataSources:
+              - name: Loki
+                type: loki
+                access: Proxy
+                url: http://loki.logging.svc.cluster.local:3100
             ingress:
               enabled: true
               ingressClassName: traefik
