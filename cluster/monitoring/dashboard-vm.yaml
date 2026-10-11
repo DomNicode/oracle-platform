@@ -273,7 +273,7 @@ data:
               },
               "direction": "backward",
               "editorMode": "code",
-              "expr": "{namespace=~\".+\"} |~ \"(?i)(error|exception|fail|panic)\" !~ \"(?i)level=(info|debug|warn|warning)\"",
+              "expr": "{namespace=~\".+\"} |~ \"(?i)(error|exception|fail|panic)\" !~ `(?i)(level=|\"level\":\\s*\")(info|debug|warn|warning)`",
               "maxLines": 100,
               "queryType": "range",
               "refId": "A"
@@ -486,7 +486,7 @@ data:
               },
               "direction": "backward",
               "editorMode": "code",
-              "expr": "sum(count_over_time({namespace=~\".+\"} |~ \"(?i)(error|exception|fail|panic)\" !~ \"(?i)level=(info|debug|warn|warning)\" [1h])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=~\".+\"} |~ \"(?i)(error|exception|fail|panic)\" !~ `(?i)(level=|\"level\":\\s*\")(info|debug|warn|warning)` [1h])) or vector(0)",
               "queryType": "instant",
               "refId": "A"
             }
