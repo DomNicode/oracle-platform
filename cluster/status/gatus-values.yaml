@@ -1,0 +1,61 @@
+# Gatus – Status-Seite für status.dompah.de
+# Chart: twin/gatus 1.5.0 (App v5.34.0)
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+persistence:
+  enabled: true
+  storageClassName: local-path
+
+serviceMonitor:
+  enabled: true
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - status.dompah.de
+  tls:
+    - secretName: gatus-tls
+      hosts:
+        - status.dompah.de
+
+config:
+  metrics: true
+  storage:
+    type: sqlite
+    path: /data/data.db
+  endpoints:
+    - name: SayIt Agent
+      group: Apps
+      url: https://agent.dompah.de/health
+      interval: 1m
+      conditions:
+        - "[STATUS] == 200"
+        - "[RESPONSE_TIME] < 1000"
+        - "[BODY].status == ok"
+    - name: Argo CD
+      group: Platform
+      url: https://argocd.dompah.de
+      interval: 5m
+      conditions:
+        - "[STATUS] == 200"
+    - name: Grafana
+      group: Platform
+      url: https://grafana.dompah.de/api/health
+      interval: 5m
+      conditions:
+        - "[STATUS] == 200"
+    - name: TLS-Zertifikat
+      group: Platform
+      url: https://agent.dompah.de
+      interval: 1h
+      conditions:
+        - "[CERTIFICATE_EXPIRATION] > 168h"
