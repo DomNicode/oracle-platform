@@ -74,8 +74,9 @@ spec:
               passwordKey: admin-password
             additionalDataSources:
               - name: Loki
+                uid: loki
                 type: loki
-                access: Proxy
+                access: proxy
                 url: http://loki.logging.svc.cluster.local:3100
             ingress:
               enabled: true
@@ -91,9 +92,12 @@ spec:
             resources:
               requests:
                 cpu: 50m
-                memory: 128Mi
+                memory: 256Mi
               limits:
-                memory: 384Mi
+                memory: 768Mi
+            grafana.ini:
+              log:
+                level: warn
 
     # --- Quelle 2: eigene Dateien aus oracle-platform -------------------
     - repoURL: https://github.com/DomNicode/oracle-platform.git
